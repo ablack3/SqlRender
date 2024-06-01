@@ -21,7 +21,6 @@ test_that("don't translate twice", {
     sql <- translate(sql, targetDialect = "postgresql"),
     "Input SQL has already been translated"
   )
-<<<<<<< HEAD
   expect_equal_ignore_spaces(
     sql,
     "select RANK() OVER (procedure_concept_id ORDER BY prc_cnt) as num"
