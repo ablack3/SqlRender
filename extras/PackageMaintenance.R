@@ -1,6 +1,4 @@
-# @file PackageMaintenance
-#
-# Copyright 2022 Observational Health Data Sciences and Informatics
+# Copyright 2024 Observational Health Data Sciences and Informatics
 #
 # This file is part of SqlRender
 # 
@@ -16,15 +14,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Format and check codeP
+# Format and check code --------------------------------------------------------
 styler::style_pkg()
 OhdsiRTools::checkUsagePackage("SqlRender")
 OhdsiRTools::updateCopyrightYearFolder()
 devtools::spell_check()
 
-# Create manual and vignettes:
+# Create manual and vignettes --------------------------------------------------
 unlink("extras/SqlRender.pdf")
-shell("R CMD Rd2pdf ./ --output=extras/SqlRender.pdf")
+system("R CMD Rd2pdf ./ --output=extras/SqlRender.pdf")
 
 dir.create("inst/doc")
 rmarkdown::render("vignettes/UsingSqlRender.Rmd",
@@ -32,19 +30,22 @@ rmarkdown::render("vignettes/UsingSqlRender.Rmd",
                   rmarkdown::pdf_document(latex_engine = "pdflatex",
                                           toc = TRUE,
                                           number_sections = TRUE))
-unlink("inst/doc/UsingSqlRender.tex")
 
 pkgdown::build_site()
 OhdsiRTools::fixHadesLogo()
 
-# Store JAR checksum --------------------------------------------------------------
+# Store JAR checksum -----------------------------------------------------------
 checksum <- rJava::J("org.ohdsi.sql.JarChecksum", "computeJarChecksum")
 write(checksum, file.path("inst", "csv", "jarChecksum.txt"))
 
+# Release package --------------------------------------------------------------
+# Check if DESCRIPTION version matches POM version:
+descriptionVersion <- stringr::str_extract(readLines("DESCRIPTION")[grepl("^Version:", readLines("DESCRIPTION"))], "(?<=Version: ).*$")
+pomVersion <- stringr::str_extract(readLines("pom.xml")[grepl("SNAPSHOT</version>", readLines("pom.xml"))], "(?<=<version>).*(?=-SNAPSHOT</version>)")
+if (descriptionVersion != pomVersion) stop("DESCRIPTION version does not match POM version")
 
-# Release package:
 devtools::check_win_devel()
 
-devtools::check_rhub()
+rhub::rc_submit(platforms = "atlas")
 
 devtools::release()

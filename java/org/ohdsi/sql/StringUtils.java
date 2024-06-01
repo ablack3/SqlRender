@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2022 Observational Health Data Sciences and Informatics
+ * Copyright 2024 Observational Health Data Sciences and Informatics
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -110,9 +110,10 @@ public class StringUtils {
 					tokens.add(token);
 				}
 				if (ch == '-' && cursor < sql.length() && sql.charAt(cursor + 1) == '-'
+						&& !inSingleQuotes && !inDoubleQuotes 
 						&& (sql.length() - cursor < 6 || !sql.substring(cursor + 2, cursor + 6).equals(HINT_KEY_WORD))) {
 					commentType1 = true;
-				} else if (ch == '/' && cursor < sql.length() && sql.charAt(cursor + 1) == '*') {
+				} else if (ch == '/' && cursor < sql.length() && sql.charAt(cursor + 1) == '*' && !inSingleQuotes && !inDoubleQuotes ) {
 					commentType2 = true;
 				} else if (!Character.isWhitespace(ch)) {
 					Token token = new Token();

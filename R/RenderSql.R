@@ -1,6 +1,6 @@
 # @file RenderSql
 #
-# Copyright 2022 Observational Health Data Sciences and Informatics
+# Copyright 2024 Observational Health Data Sciences and Informatics
 #
 # This file is part of SqlRender
 #
@@ -89,6 +89,7 @@ render <- function(sql, warnOnMissingParameters = TRUE, ...) {
     }
   }
   translatedSql <- rJava::J("org.ohdsi.sql.SqlRender")$renderSql(as.character(sql), rJava::.jarray(names(parameters)), rJava::.jarray(as.character(parameters)))
+  attributes(translatedSql) <- attributes(sql)
   return(translatedSql)
 }
 
@@ -132,7 +133,7 @@ renderSql <- function(sql = "", warnOnMissingParameters = TRUE, ...) {
 #'
 #' @param sql                   The SQL to be translated
 #' @param targetDialect         The target dialect. Currently "oracle", "postgresql", "pdw", "impala",
-#'                              "sqlite", "sqlite extended", "netezza", "bigquery", "spark", and "redshift" are supported.
+#'                              "sqlite", "sqlite extended", "netezza", "bigquery", "snowflake", "synapse", "spark", and "redshift" are supported.
 #'                              Use \code{\link{listSupportedDialects}} to get the list of supported dialects.
 #' @param oracleTempSchema      DEPRECATED: use \code{tempEmulationSchema} instead.
 #' @param tempEmulationSchema   Some database platforms like Oracle and Impala do not truly support
@@ -156,6 +157,14 @@ translate <- function(sql,
   checkmate::assertCharacter(oracleTempSchema, len = 1, null.ok = TRUE, add = errorMessages)
   checkmate::reportAssertions(collection = errorMessages)
 
+  if (!is.null(attr(sql, "sqlDialect"))) {
+    warn("Input SQL has already been translated, so not translating again",
+      .frequency = "regularly",
+      .frequency_id = "alreadyTranslated"
+    )
+    return(sql)
+  }
+
   if (!supportsJava8()) {
     warning("Java 8 or higher is required, but older version was found. ")
     return("")
@@ -178,6 +187,8 @@ translate <- function(sql,
     warn(message)
   }
   translatedSql <- rJava::J("org.ohdsi.sql.SqlTranslate")$translateSqlWithPath(as.character(sql), as.character(targetDialect), rJava::.jnull(), tempEmulationSchema, as.character(pathToReplacementPatterns))
+  attributes(translatedSql) <- attributes(sql)
+  attr(translatedSql, "sqlDialect") <- targetDialect
   return(translatedSql)
 }
 
@@ -190,7 +201,7 @@ translate <- function(sql,
 #'
 #' @param sql                The SQL to be translated
 #' @param targetDialect      The target dialect. Currently "oracle", "postgresql", "pdw", "impala",
-#'                           "netezza", "bigquery", "spark", and "redshift" are supported
+#'                           "netezza", "bigquery", "snowflake", "synapse", "spark", and "redshift" are supported
 #' @param oracleTempSchema   A schema that can be used to create temp tables in when using Oracle or
 #'                           Impala.
 #'
@@ -219,7 +230,7 @@ translateSql <- function(sql = "", targetDialect, oracleTempSchema = NULL) {
 #'
 #' @param sql                   The SQL to be translated
 #' @param targetDialect         The target dialect. Currently "oracle", "postgresql", "pdw", "impala",
-#'                              "sqlite", "sqlite extended", "netezza", "bigquery", "spark", and "redshift" are supported.
+#'                              "sqlite", "sqlite extended", "netezza", "bigquery", "snowflake", "synapse", "spark", and "redshift" are supported.
 #' @param oracleTempSchema      DEPRECATED: use \code{tempEmulationSchema} instead.
 #' @param tempEmulationSchema   Some database platforms like Oracle and Impala do not truly support
 #'                              temp tables. To emulate temp tables, provide a schema with write
@@ -240,6 +251,14 @@ translateSingleStatement <- function(sql = "",
   checkmate::assertCharacter(tempEmulationSchema, len = 1, null.ok = TRUE, add = errorMessages)
   checkmate::assertCharacter(oracleTempSchema, len = 1, null.ok = TRUE, add = errorMessages)
   checkmate::reportAssertions(collection = errorMessages)
+
+  if (!is.null(attr(sql, "sqlDialect"))) {
+    warn("Input SQL has already been translated, so not translating again",
+      .frequency = "regularly",
+      .frequency_id = "alreadyTranslated"
+    )
+    return(sql)
+  }
 
   if (!supportsJava8()) {
     warning("Java 8 or higher is required, but older version was found. ")
@@ -263,6 +282,8 @@ translateSingleStatement <- function(sql = "",
     warn(message)
   }
   translatedSql <- rJava::J("org.ohdsi.sql.SqlTranslate")$translateSingleStatementSqlWithPath(as.character(sql), as.character(targetDialect), rJava::.jnull(), tempEmulationSchema, as.character(pathToReplacementPatterns))
+  attributes(translatedSql) <- attributes(sql)
+  attr(translatedSql, "sqlDialect") <- targetDialect
   return(translatedSql)
 }
 

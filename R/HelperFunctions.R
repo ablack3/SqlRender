@@ -1,6 +1,6 @@
 # @file HelperFunctions.R
 #
-# Copyright 2022 Observational Health Data Sciences and Informatics
+# Copyright 2024 Observational Health Data Sciences and Informatics
 #
 # This file is part of SqlRender
 #
@@ -130,7 +130,7 @@ renderSqlFile <- function(sourceFile, targetFile, warnOnMissingParameters = TRUE
 #' @param sourceFile            The source SQL file
 #' @param targetFile            The target SQL file
 #' @param targetDialect         The target dialect. Currently "oracle", "postgresql", "pdw", "impala",
-#'                              "sqlite", "netezza", "bigquery", "spark", and "redshift" are supported.
+#'                              "sqlite", "netezza", "bigquery", "snowflake", "synapse", "spark", and "redshift" are supported.
 #' @param oracleTempSchema      DEPRECATED: use \code{tempEmulationSchema} instead.
 #' @param tempEmulationSchema   Some database platforms like Oracle and Impala do not truly support
 #'                              temp tables. To emulate temp tables, provide a schema with write
@@ -183,9 +183,9 @@ translateSqlFile <- function(sourceFile,
 #' @details
 #' This function looks for a SQL file with the specified name in the inst/sql/<dbms> folder of the
 #' specified package. If it doesn't find it in that folder, it will try and load the file from the
-#' inst/sql/sql_server folder and use the \code{translate} function to translate it to the requested
-#' dialect. It will subsequently call the \code{render} function with any of the additional specified
-#' parameters.
+#' inst/sql or inst/sql/sql_server folder and use the \code{translate} function to translate it to the
+#' requested dialect. It will subsequently call the \code{render} function with any of the additional
+#' specified parameters.
 #'
 #'
 #' @param sqlFilename               The source SQL file
@@ -236,24 +236,19 @@ loadRenderTranslateSql <- function(sqlFilename,
     )
     tempEmulationSchema <- oracleTempSchema
   }
-  pathToSql <- system.file(paste("sql/", gsub(" ", "_", dbms), sep = ""),
-    sqlFilename,
-    package = packageName
-  )
-  mustTranslate <- !file.exists(pathToSql)
+  pathToSql <- system.file("sql", gsub(" ", "_", dbms), sqlFilename, package = packageName)
+  mustTranslate <- pathToSql == ""
   if (mustTranslate) {
     # If DBMS-specific code does not exists, load SQL Server code and translate after rendering
-    pathToSql <- system.file(paste("sql/", "sql_server", sep = ""),
-      sqlFilename,
-      package = packageName
-    )
-    if (!file.exists(pathToSql)) {
-      abort(paste0(
-        "Cannot find '",
+    pathToSql <- system.file("sql", "sql_server", sqlFilename, package = packageName)
+    if (pathToSql == "") {
+      pathToSql <- system.file("sql", sqlFilename, package = packageName)
+    }
+    if (pathToSql == "") {
+      abort(sprintf(
+        "Cannot find '%s' in the 'sql' or 'sql/sql_server' folder of the '%s' package.",
         sqlFilename,
-        "' in the 'sql/sql_server' folder of the '",
-        packageName,
-        "' package."
+        packageName
       ))
     }
   }

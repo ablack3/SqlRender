@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2022 Observational Health Data Sciences and Informatics
+ * Copyright 2024 Observational Health Data Sciences and Informatics
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,12 +35,11 @@ import java.util.regex.Pattern;
 
 public class SqlTranslate {
 	public static int SESSION_ID_LENGTH = 8;
-	public static int MAX_ORACLE_TABLE_NAME_LENGTH = 30;
+	public static int MAX_TABLE_NAME_LENGTH = 63; // PostreSQL default limit
 	private static Map<String, List<String[]>> targetToReplacementPatterns = null;
 	private static ReentrantLock lock = new ReentrantLock();
 	private static Random random = new Random();
 	private static String globalSessionId = null;
-	private static String SOURCE_DIALECT = "sql server";
 	private static String BIG_QUERY = "bigquery";
 	private static String IMPALA = "impala";
 	private static String SPARK = "spark";
@@ -501,17 +500,8 @@ public class SqlTranslate {
 
 		List<String[]> replacementPatterns = targetToReplacementPatterns.get(targetDialect);
 		if (replacementPatterns == null) {
-			if (SOURCE_DIALECT.equals(targetDialect))
-				return sql;
-			else {
-				Set<String> allowedDialects = new HashSet<String>();
-				allowedDialects.add(SOURCE_DIALECT);
-				for (String sourceTarget : targetToReplacementPatterns.keySet())
-					if (sourceTarget.split("\t")[0].equals(SOURCE_DIALECT))
-						allowedDialects.add(sourceTarget.split("\t")[1]);
-				throw new RuntimeException("Don't know how to translate from " + SOURCE_DIALECT + " to " + targetDialect
-						+ ". Valid target dialects are " + StringUtils.join(allowedDialects, ", "));
-			}
+			throw new RuntimeException("Don't know how to translate to " + targetDialect
+					+ ". Valid target dialects are " + StringUtils.join(targetToReplacementPatterns.keySet(), ", "));
 		} else if (targetDialect.equalsIgnoreCase(BIG_QUERY)) {
 			sql = BigQuerySparkTranslate.translatebigQuery(sql);
 		} else if (targetDialect.equalsIgnoreCase(SPARK)) {
@@ -614,13 +604,13 @@ public class SqlTranslate {
 		Matcher matcher = pattern.matcher(sql);
 		Set<String> longTempNames = new HashSet<String>();
 		while (matcher.find())
-			if (matcher.group().length() > MAX_ORACLE_TABLE_NAME_LENGTH - SESSION_ID_LENGTH - 1)
+			if (matcher.group().length() > MAX_TABLE_NAME_LENGTH - SESSION_ID_LENGTH - 1)
 				longTempNames.add(matcher.group());
 
 		for (String longName : longTempNames)
 			warnings.add("Temp table name '" + longName + "' is too long. Temp table names should be shorter than "
-					+ (MAX_ORACLE_TABLE_NAME_LENGTH - SESSION_ID_LENGTH)
-					+ " characters to prevent Oracle from crashing.");
+					+ (MAX_TABLE_NAME_LENGTH - SESSION_ID_LENGTH)
+					+ " characters to prevent some DMBSs from throwing an error.");
 
 		// normal table names:
 		pattern = Pattern.compile("(create|drop|truncate)\\s+table +[0-9a-zA-Z_]+");
@@ -628,12 +618,12 @@ public class SqlTranslate {
 		Set<String> longNames = new HashSet<String>();
 		while (matcher.find()) {
 			String name = sql.substring(matcher.start() + matcher.group().lastIndexOf(" "), matcher.end());
-			if (name.length() > MAX_ORACLE_TABLE_NAME_LENGTH && !longTempNames.contains("#" + name))
+			if (name.length() > MAX_TABLE_NAME_LENGTH && !longTempNames.contains("#" + name))
 				longNames.add(name);
 		}
 		for (String longName : longNames)
 			warnings.add("Table name '" + longName + "' is too long. Table names should be shorter than "
-					+ MAX_ORACLE_TABLE_NAME_LENGTH + " characters to prevent Oracle from crashing.");
+					+ MAX_TABLE_NAME_LENGTH + " characters to prevent some DMBSs from throwing an error.");
 
 		return warnings.toArray(new String[warnings.size()]);
 	}

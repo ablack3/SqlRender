@@ -8,7 +8,7 @@ expect_equal_ignore_spaces <- function(string1, string2) {
   string2 <- gsub("([;()'+-/|*\n])", " \\1 ", string2)
   string1 <- gsub(" +", " ", string1)
   string2 <- gsub(" +", " ", string2)
-  expect_equal(string1, string2)
+  expect_equivalent(string1, string2)
 }
 
 test_that("translate sql server -> SQLite string concat", {
@@ -72,7 +72,7 @@ test_that("translate sql server -> SQLite select random row", {
   )
   expect_equal_ignore_spaces(
     sql,
-    "SELECT column FROM (SELECT column, ROW_NUMBER() OVER (ORDER BY RANDOM()) AS rn FROM table) tmp WHERE rn <= 1"
+    "SELECT column FROM (SELECT column, ROW_NUMBER() OVER (ORDER BY ((RANDOM()+9223372036854775808) / 18446744073709551615)) AS rn FROM table) tmp WHERE rn <= 1"
   )
 })
 
@@ -161,7 +161,7 @@ test_that("translate sql server -> sqlite DATEDIFF with literals", {
   sql <- translate("SELECT DATEDIFF(DAY, '20000131', '20000101');", targetDialect = "sqlite")
   expect_equal_ignore_spaces(
     sql,
-    "SELECT JULIANDAY(CAST(STRFTIME('%s', SUBSTR(CAST('20000101' AS TEXT), 1, 4) || '-' || SUBSTR(CAST('20000101' AS TEXT), 5, 2) || '-' || SUBSTR(CAST('20000101' AS TEXT), 7)) AS REAL), 'unixepoch') - JULIANDAY(CAST(STRFTIME('%s', SUBSTR(CAST('20000131' AS TEXT), 1, 4) || '-' || SUBSTR(CAST('20000131' AS TEXT), 5, 2) || '-' || SUBSTR(CAST('20000131' AS TEXT), 7)) AS REAL), 'unixepoch');"
+    "SELECT (JULIANDAY(CAST(STRFTIME('%s', SUBSTR(CAST('20000101' AS TEXT), 1, 4) || '-' || SUBSTR(CAST('20000101' AS TEXT), 5, 2) || '-' || SUBSTR(CAST('20000101' AS TEXT), 7)) AS REAL), 'unixepoch') - JULIANDAY(CAST(STRFTIME('%s', SUBSTR(CAST('20000131' AS TEXT), 1, 4) || '-' || SUBSTR(CAST('20000131' AS TEXT), 5, 2) || '-' || SUBSTR(CAST('20000131' AS TEXT), 7)) AS REAL), 'unixepoch'));"
   )
 })
 
@@ -169,7 +169,7 @@ test_that("translate sql server -> sqlite DATEDIFF with date fields", {
   sql <- translate("SELECT DATEDIFF(DAY, date1, date2);", targetDialect = "sqlite")
   expect_equal_ignore_spaces(
     sql,
-    "SELECT JULIANDAY(date2, 'unixepoch') - JULIANDAY(date1, 'unixepoch');"
+    "SELECT (JULIANDAY(date2, 'unixepoch') - JULIANDAY(date1, 'unixepoch'));"
   )
 })
 
@@ -213,4 +213,67 @@ test_that("translate sql server -> sqlite CEILING", {
 test_that("translate sql server -> sqlite DROP TABLE IF EXISTS", {
   sql <- translate("DROP TABLE IF EXISTS test;", targetDialect = "sqlite")
   expect_equal_ignore_spaces(sql, "DROP TABLE IF EXISTS test;")
+})
+
+test_that("translate sql server -> sqlite IIF", {
+  sql <- translate("SELECT IIF(a>b, 1, b) AS max_val FROM table;", targetDialect = "sqlite")
+  expect_equal_ignore_spaces(sql, "SELECT CASE WHEN a>b THEN 1 ELSE b END AS max_val FROM table ;")
+})
+
+test_that("translate sql server -> sqlite UNION ALL parentheses", {
+  sql <- translate("SELECT * FROM ((SELECT * FROM a) UNION ALL (SELECT * FROM b));", targetDialect = "sqlite")
+  expect_equal_ignore_spaces(sql, "SELECT * FROM (SELECT * FROM a UNION ALL SELECT * FROM b);")
+})
+
+test_that("translate sql server -> sqlite UNION parentheses", {
+  sql <- translate("SELECT * FROM ((SELECT * FROM a) UNION (SELECT * FROM b));", targetDialect = "sqlite")
+  expect_equal_ignore_spaces(sql, "SELECT * FROM (SELECT * FROM a UNION SELECT * FROM b);")
+})
+
+test_that("translate sql server -> sqlite UNION parentheses with IN", {
+  sql <- translate("SELECT * FROM x WHERE y IN (SELECT * FROM a) UNION SELECT * FROM z;", targetDialect = "sqlite")
+  expect_equal_ignore_spaces(sql, "SELECT * FROM x WHERE y IN ((SELECT * FROM a)) UNION SELECT * FROM z;")
+})
+
+
+test_that("translate sql server -> sqlite TRY_CAST", {
+  sql <- translate("SELECT TRY_CAST(x AS INT) FROM x;", targetDialect = "sqlite")
+  expect_equal_ignore_spaces(sql, "SELECT CAST(x AS INT) FROM x;")
+})
+
+test_that("translate sql server -> sqlite drvd()", {
+  sql <- translate("SELECT
+      TRY_CAST(name AS VARCHAR(MAX)) AS name,
+      TRY_CAST(speed AS FLOAT) AS speed
+    FROM (  VALUES ('A', 1.0), ('B', 2.0)) AS drvd(name, speed);", targetDialect = "sqlite")
+  expect_equal_ignore_spaces(sql, "SELECT
+      CAST(name AS TEXT) AS name,
+      CAST(speed AS REAL) AS speed
+    FROM (SELECT NULL AS name, NULL AS speed WHERE (0 = 1) UNION ALL VALUES ('A', 1.0), ('B', 2.0)) AS values_table;")
+})
+
+test_that("translate sql server -> sqlite temp table field ref", {
+  sql <- translate("SELECT #tmp.name FROM #tmp;", targetDialect = "sqlite")
+  expect_equal_ignore_spaces(sql, "SELECT tmp.name FROM temp.tmp;")
+})
+
+test_that("translate sql server -> sqlite ALTER TABLE ADD single", {
+  sql <- translate("ALTER TABLE my_table ADD a INT;", targetDialect = "sqlite")
+  expect_equal_ignore_spaces(sql, "ALTER TABLE my_table  ADD a INT;")
+})
+
+test_that("translate sql server -> sqlite ALTER TABLE ADD multiple", {
+  sql <- translate("ALTER TABLE my_table ADD a INT, b INT, c VARCHAR(255);", targetDialect = "sqlite")
+  expect_equal_ignore_spaces(sql, "ALTER TABLE my_table ADD a INT; ALTER TABLE my_table ADD b INT; ALTER TABLE my_table ADD c TEXT;")
+})
+
+test_that("translate sql server -> sqlite ALTER TABLE ADD COLUMN", {
+  # Note: this is incorrect OhdsiSql, but included for legacy reasons (https://github.com/OHDSI/CohortDiagnostics/issues/1080)
+  sql <- translate("ALTER TABLE my_table ADD COLUMN a INT;", targetDialect = "sqlite")
+  expect_equal_ignore_spaces(sql, "ALTER TABLE my_table ADD COLUMN a INT;")
+})
+
+test_that("translate sql server -> sqlite ALTER TABLE ALTER COLUMN", {
+  sql <- translate("ALTER TABLE my_table ALTER COLUMN a BIGINT;", targetDialect = "sqlite")
+  expect_equal_ignore_spaces(sql, "SELECT 0;")
 })

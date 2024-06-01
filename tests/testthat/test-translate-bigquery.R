@@ -8,7 +8,7 @@ expect_equal_ignore_spaces <- function(string1, string2) {
   string2 <- gsub("([;()'+-/|*\n])", " \\1 ", string2)
   string1 <- gsub(" +", " ", string1)
   string2 <- gsub(" +", " ", string2)
-  expect_equal(string1, string2)
+  expect_equivalent(string1, string2)
 }
 
 test_that("translate sql server -> Big Query select random row using hash", {
@@ -37,7 +37,7 @@ test_that("translate sql server -> bigquery lowercase all but strings and variab
   )
   expect_equal_ignore_spaces(
     sql,
-    "select x.y, 'Mixed Case String' from \"MixedCaseTableName.T\" where x.z=@camelCaseVar group by x.y"
+    "select x.y, 'Mixed Case String' from `MixedCaseTableName.T` where x.z=@camelCaseVar group by x.y"
   )
 })
 
@@ -201,7 +201,17 @@ test_that("translate sql server -> bigquery DATEADD", {
   )
   expect_equal_ignore_spaces(
     sql,
-    "select DATE_ADD(IF(SAFE_CAST(drug_era_end_date AS DATE) IS NULL,PARSE_DATE('%Y%m%d',cast(drug_era_end_date AS STRING)),SAFE_CAST(drug_era_end_date AS DATE)), interval 30 DAY) from drug_era;"
+    "select DATE_ADD(IF(SAFE_CAST(drug_era_end_date AS DATE) IS NULL,PARSE_DATE('%Y%m%d',cast(drug_era_end_date AS STRING)),SAFE_CAST(drug_era_end_date AS DATE)), INTERVAL 30 DAY) from drug_era;"
+  )
+})
+
+test_that("translate sql server -> bigquery DATEADD non-integer", {
+  sql <- translate("SELECT DATEADD(dd,30.0,drug_era_end_date) FROM drug_era;",
+    targetDialect = "bigquery"
+  )
+  expect_equal_ignore_spaces(
+    sql,
+    "select DATE_ADD(IF(SAFE_CAST(drug_era_end_date AS DATE) IS NULL,PARSE_DATE('%Y%m%d',cast(drug_era_end_date AS STRING)),SAFE_CAST(drug_era_end_date AS DATE)), INTERVAL 30 DAY) from drug_era;"
   )
 })
 
@@ -314,7 +324,7 @@ test_that("translate sql server -> bigquery intersect distinct", {
   )
   expect_equal_ignore_spaces(
     sql,
-    "SELECT t1.a FROM (SELECT DISTINCT a FROM t UNION ALL SELECT DISTINCT a FROM s) AS t1 GROUP BY a HAVING COUNT(*) >= 2;"
+    "select distinct a from t INTERSECT DISTINCT select distinct a from s;"
   )
 })
 
@@ -324,7 +334,7 @@ test_that("translate sql server -> bigquery bracketed intersect distinct", {
   )
   expect_equal_ignore_spaces(
     sql,
-    "(SELECT t1.a FROM (SELECT DISTINCT a FROM t UNION ALL SELECT DISTINCT a FROM s) AS t1 GROUP BY a HAVING COUNT(*) >= 2)"
+    "(select distinct a from t INTERSECT DISTINCT select distinct a from s)"
   )
 })
 
@@ -385,11 +395,6 @@ test_that("translate sql server -> bigquery DATEFROMPARTS", {
   sql <- translate("select DATEFROMPARTS(2019,1,30)", targetDialect = "bigquery")
   expect_equal_ignore_spaces(sql, "select DATE(2019,1,30)")
 })
-
-# test_that("translate sql server -> bigquery offset literal", {
-#   sql <- translate("create table test_that (\"offset\" STRING);", targetDialect = "bigquery")
-#   expect_equal_ignore_spaces(sql, "create table test_that (offset STRING);")
-# })
 
 test_that("translate sql server -> bigquery EOMONTH()", {
   sql <- translate("select eomonth(payer_plan_period_start_date)", targetDialect = "bigquery")
@@ -457,7 +462,7 @@ test_that("translate sql server -> String concatenation", {
   )
   expect_equal_ignore_spaces(
     sql,
-    "select CONCAT(last_name, ', ', first_name) from my_table;"
+    "select CONCAT(last_name, ', ', first_name) FROM my_table;"
   )
 })
 
@@ -467,7 +472,7 @@ test_that("translate sql server -> String concatenation", {
   )
   expect_equal_ignore_spaces(
     sql,
-    "select CONCAT(first_name, CAST(middle_initial AS STRING), last_name) from my_table;"
+    "select CONCAT(first_name, CAST(middle_initial AS STRING), last_name) FROM my_table;"
   )
 })
 
@@ -477,7 +482,7 @@ test_that("translate sql server -> String concatenation", {
   )
   expect_equal_ignore_spaces(
     sql,
-    "select CONCAT(first_name, CAST(middle_initial AS STRING), last_name) from my_table;"
+    "select CONCAT(first_name, CAST(middle_initial AS STRING), last_name) FROM my_table;"
   )
 })
 
@@ -487,7 +492,7 @@ test_that("translate sql server -> String concatenation", {
   )
   expect_equal_ignore_spaces(
     sql,
-    "select subgroup_id, CONCAT('Persons aged ', CONCAT(cast(age_low as STRING), 'to ', cast(age_high as STRING), 'with gender = '), gender_name) from subgroups;"
+    "select subgroup_id, CONCAT('Persons aged ', CAST(age_low  AS STRING), CONCAT('to ', cast(age_high as STRING)), 'with gender = ', gender_name ) FROM subgroups;"
   )
 })
 
@@ -499,4 +504,48 @@ test_that("translate sql server -> bigquery DROP TABLE IF EXISTS", {
 test_that("translate sql server -> bigquery nullable field", {
   sql <- translate("CREATE TABLE test (x NUMERIC NULL, y NUMERIC NOT NULL);", targetDialect = "bigquery")
   expect_equal_ignore_spaces(sql, "create table test (x NUMERIC, y numeric not null);")
+})
+
+test_that("translate sql server -> bigquery NEWID()", {
+  sql <- translate("SELECT *, NEWID() FROM my_table;", targetDialect = "bigquery")
+  expect_equal_ignore_spaces(sql, "select *, GENERATE_UUID() from my_table;")
+})
+
+test_that("translate sql server -> bigquery DBPLYR alias collision", {
+  sql <- translate("SELECT * FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY RAND()) AS q01
+  FROM cdmv5.dbo.person) q01 WHERE (q01 <= 10)", targetDialect = "bigquery")
+  expect_equal_ignore_spaces(sql, "select * from (select *, row_number() over (order by rand()) AS val_q01\n  from cdmv5.dbo.person) q01 where (val_q01 <= 10)")
+})
+
+test_that("translate sql server -> bigquery IIF", {
+  sql <- translate("SELECT IIF(a>b, 1, b) AS max_val FROM table;", targetDialect = "bigquery")
+  expect_equal_ignore_spaces(sql, "select CASE WHEN a>b THEN 1 ELSE b END as max_val from table ;")
+})
+
+test_that("translate sql server -> bigquery drvd()", {
+  sql <- translate("SELECT
+      TRY_CAST(name AS VARCHAR(MAX)) AS name,
+      TRY_CAST(speed AS FLOAT) AS speed
+    FROM (  VALUES ('A', 1.0), ('B', 2.0)) AS drvd(name, speed);", targetDialect = "bigquery")
+  expect_equal_ignore_spaces(sql, "select\n      CAST(name as STRING) as name,\n      cast(speed  as float64) as speed\n    FROM (SELECT NULL AS name, NULL AS speed UNION ALL SELECT 'A', 1.0 UNION ALL SELECT 'B', 2.0 LIMIT 999999 OFFSET 1) AS values_table;")
+})
+
+test_that("translate sql server -> bigquery temp table field ref", {
+  sql <- translate("SELECT #tmp.name FROM #tmp;", targetDialect = "bigquery", tempEmulationSchema = "ts")
+  expect_equal_ignore_spaces(sql, sprintf("select %stmp.name from ts.%stmp;", getTempTablePrefix(), getTempTablePrefix()))
+})
+
+test_that("translate sql server -> bigquery temp dplyr ... pattern", {
+  sql <- translate("SELECT * FROM table...1;", targetDialect = "bigquery")
+  expect_equal_ignore_spaces(sql, "select * from tablexxx1;")
+})
+
+test_that("translate sql server -> bigquery quotes", {
+  sql <- translate("SELECT \"a\" from t;", targetDialect = "bigquery")
+  expect_equal_ignore_spaces(sql, "select `a` from t;")
+})
+
+test_that("translate sql server -> bigquery RIGHT with implicit concat", {
+  sql <- translate("RIGHT('0' + CAST(p.month_of_birth AS VARCHAR), 2)", targetDialect = "bigquery")
+  expect_equal_ignore_spaces(sql, "SUBSTR(CONCAT('0', cast(p.month_of_birth as STRING)),-2)")
 })
